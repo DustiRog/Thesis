@@ -1,1 +1,4 @@
 Docs/
+*.rds
+Data/
+sim_study/
