@@ -66,8 +66,6 @@ get_coefs = function(midp, data){
   # Output: dataframe with bin estimates for each id and errors    #
   ##################################################################
   
-  #Set the parameters from the list passsed in
-  
   # function to fit glmm in a bin width and return the mean at the midpoint of the bin
   mod = glmer(data = data ,Y ~ X + (1|id), family=binomial, control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
   
@@ -79,7 +77,7 @@ get_coefs = function(midp, data){
 
 
 
-get_fgfosr_mod = function(df_list, bin_count, cores=1){
+get_fgfosr_mod = function(df_list, bin_count){
   
   ################################################################################################################
   # Input: df        - simulated dataframe with [1] simulated data and [2] true values at each observation point #
@@ -103,8 +101,9 @@ get_fgfosr_mod = function(df_list, bin_count, cores=1){
   bin_seg_list = as.list(as.data.frame(t(bin_groups)))
   
   # Step 2
-  #fit glmm data in each bin with get_coef function run in parallel
-  fit_df = bind_rows(mclapply(bin_seg_list, function(x) get_coefs(x[[3]], df[df$sind >= x[[1]] & df$sind <= x[[2]],]), mc.cores = cores))
+  #fit glmm data in each bin with get_coef function, pass in filtered data to reduce memory overhead when running in parallel
+  fit_df = bind_rows(lapply(bin_seg_list, function(x) get_coefs(x[[3]], df[df$sind >= x[[1]] & df$sind <= x[[2]],])))
+
   
   # Step 3
   #get number of ids to make a wide matrix of the fit_df
@@ -144,14 +143,14 @@ get_fgfosr_mod = function(df_list, bin_count, cores=1){
   
   
   #### fit gam with formula
-  gam_mod = mgcv::bam(dynamic_form, method = "fREML", data = df_w_ef, discrete = T,  family=binomial, gc.level = 2)
+  gam_mod = mgcv::bam(dynamic_form, method = "fREML", data = df_w_ef, discrete = T,  family=binomial, gc.level = 1)
   
   #tie simulated data run number to the model fit
   run = unique(df$run)
   
   cov_err_df = fit_df %>% filter(error != "None") %>% mutate(run = run)
   
-  gam_mod_list = list(gam_mod, df_w_ef$sind, run)
+  gam_mod_list = list(gam_mod, df_w_ef$sind, run, cov_err_df)
   
   return(gam_mod_list)
   
@@ -254,7 +253,7 @@ bias_coverage_mse = function(df){
     summarise(cov = mean(run_cov)) %>%
     pull(cov)
   
-  MSE = results %>%
+  MSE = df %>%
     summarize( mean(true_val - pred_val)^2) %>%
     pull()
   
@@ -293,7 +292,7 @@ get_pffr_mod = function(df_list, N, J){
                    # use mgcv::bam with fastREML smoothing parameter selection to estimate the model
                    algorithm="bam", method="fREML", discrete=TRUE,
                    # specify the bases used for estimating f_0(s), f_1(s) via bs.int and bs.yindex, respectively
-                   bs.yindex=list(bs="cr", k=10), bs.int=list(bs="cr",k=10), data=df_pffr,
+                   bs.yindex=list(bs="cr", k=30), bs.int=list(bs="cr",k=30), data=df_pffr,
                    # specify outcome distribution and the functional domain (yind)
                    family="binomial", yind=sind)
   
